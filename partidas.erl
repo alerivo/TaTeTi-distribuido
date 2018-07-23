@@ -24,8 +24,6 @@ decrementarObs(Pid,Lista)->
   [{Pid3,Id3,Obs3}] =[{Pid2,Id,Obs} || {Pid2,Id,Obs} <- Lista, Pid2 == Pid ],
   (Lista--[{Pid3,Id3,Obs3}])++[{Pid3,Id3,Obs3-1}].
 
-
-
 infoPartidas(PIniciadas,PEnEspera)->
   M1 = "Partidas esperando un jugador:"++n(),
   M2 = "ID de partida      Cantidad de observadores"++n(),
@@ -43,10 +41,8 @@ buscoId(Id,Lista)->
     _ -> nth(1, Busqueda)
   end.
 
-
 buscoPid(Pid,Lista)->
   [{Pid2,Id,Obs} || {Pid2,Id,Obs} <- Lista, Pid2 == Pid ].
-
 
 partidas(PIniciadas,PEnEspera,CantPartidas)->
   receive
@@ -79,7 +75,7 @@ partidas(PIniciadas,PEnEspera,CantPartidas)->
       {solicito_crear,Usuario,Pid} ->
         PidPartida = spawn(tateti, tateti,[Usuario]),%Crear una partida
         Msg = format("Se creo satisfactoriamente la partida con Id: ~p",[CantPartidas]),
-        Pid ! {ok, Msg},
+        Pid ! {ok,Msg,PidPartida},
         NuevaPartida = {PidPartida, CantPartidas, 0},
         partidas(PIniciadas,PEnEspera++[NuevaPartida],CantPartidas+1);
 
@@ -102,36 +98,26 @@ partidas(PIniciadas,PEnEspera,CantPartidas)->
         Partida = buscoPid(Pid,PEnEspera),
         partidas(PIniciadas++Partida,PEnEspera--Partida,CantPartidas);
 
-
-
-      {solicito_observar,Usuario, Id,Pid} ->
+      {solicito_observar,Usuario,Id,Pid} ->
         case buscoId(Id, PEnEspera++PIniciadas) of
           noEsta ->
             Pid ! {rta, "No existe partida con ese identificador"++n()},
             partidas(PIniciadas,PEnEspera,CantPartidas);
 
           {PidPartida, Id, _} ->
-            PidPartida ! {observa, Usuario},%Solicita observar una partida, falta aumentar el numero de observadores
+            PidPartida ! {observa, Usuario},
             partidas(PIniciadas,PEnEspera,CantPartidas)
         end;
-        
-      {solicito_no_observar,Usuario, Id,Pid} ->
-        case buscoId(Id, PEnEspera++PIniciadas) of
+
+      {solicito_no_observar,Usuario,Id,Pid} ->
+        case buscoId(Id,PEnEspera++PIniciadas) of
           noEsta ->
             Pid ! {rta, "No existe partida con ese identificador"++n()},
             partidas(PIniciadas,PEnEspera,CantPartidas);
 
           {PidPartida, Id, _} ->
-            PidPartida ! {no_observa, Usuario},%Dejar de observar una partida
-            partidas(PIniciadas,PEnEspera,CantPartidas)%Falta decrementar el numero de observadores
-        end;
-
-      {salir,Usuario} ->
-        Enviar = fun({Pid,_,_}) -> Pid ! {se_va, Usuario} end,
-        map(Enviar,Usuario#usuario.obs),%Avisarle  a todas las partidas que el jugador esta observando que se va
-        if 
-          Usuario#usuario.jugando /= undefined -> Pid ! {se_va, Usuario};
-          true -> ok
+            PidPartida ! {no_observa, Usuario},
+            partidas(PIniciadas,PEnEspera,CantPartidas)
         end
   end,
   ok.

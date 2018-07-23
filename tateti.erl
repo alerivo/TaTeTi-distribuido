@@ -1,27 +1,29 @@
 -module(tateti).
--import (lists, [map/2,is_member/2,nth/2]).
+-include("usuario.hrl").
+-import(io_lib,[format/2]).
+-import (lists, [map/2,any/2,nth/2,filter/2]).
 -export([tateti/1]).
 
 n() ->
 "
 ".
 
+is_member(Elemento, Lista) ->
+  any(fun(Elto) -> Elto == Elemento end, Lista).
+
 notificarNoObs(Jugadores,Observador,Observadores)->
   enviar(Observador, "Dejaste de observar esta partida."++n()),
-  enviarList(Observadores++Jugadores, nombre(Observador)++" dejo de observar esta partida."++n()),
+  enviarList(Observadores++Jugadores--[Observador], Observador#usuario.nombre++" dejo de observar esta partida."++n()),
   ok.
 
 notificarObs(Jugadores,Observador,Observadores)->
   enviar(Observador, "Ahora observas esta partida."++n()),
-  enviarList(Observadores++Jugadores, nombre(Observador)++" ahora observa esta partida."++n()),
+  enviarList(Observadores++Jugadores, Observador#usuario.nombre++" ahora observa esta partida."++n()),
   ok.
 
-
-enviar({_, Psocket}, Msg)->
-  Psocket ! {reenviar, Msg},
+enviar(Usuario, Msg) ->
+  Usuario#usuario.psocket ! {reenviar, Msg},
   ok.
-
-
 
 enviarList(Jugadores, Msg)->
   Enviar = fun({_,Psocket})-> Psocket ! {reenviar, Msg} end,
@@ -66,7 +68,7 @@ tateti(Tablero,Jugadores,Observadores,TurnoDe)->
               enviar(Observador, "Ya observas esta partida."++n()),
               tateti(Tablero,Jugadores,Observadores,TurnoDe);
             false ->
-              Observador#usuario.obs++[self()],
+              Observador#usuario.psocket ! {actualizar,agregoObs,self()},
               partidas ! {llego_obs,length(Jugadores),self()},
               notificarObs(Jugadores,Observador,Observadores),
               tateti(Tablero,Jugadores,Observadores++[Observador],TurnoDe)
@@ -79,40 +81,47 @@ tateti(Tablero,Jugadores,Observadores,TurnoDe)->
           enviar(Observador, "No observabas esta partida."++n()),
           tateti(Tablero,Jugadores,Observadores,TurnoDe);
         true ->
-          Observador#usuario.obs--[self()],
+          Observador#usuario.psocket ! {actualizar,quitoObs,self()},
           partidas ! {se_fue_obs,length(Jugadores),self()},
           notificarNoObs(Jugadores,Observador,Observadores),
           tateti(Tablero,Jugadores,Observadores--[Observador],TurnoDe)
       end;
 
-    {se_va, Jugador} ->
+    {se_va_jugador,Jugador} ->
       case is_member(Jugador,Jugadores) of
         true ->
+          NombreJugador = Jugador#usuario.nombre,
+          Msg = format("Te fuiste de la partida. Llevas ~p ganadas y ~p perdidas.",[Jugador#usuario.ganadas,Jugador#usuario.perdidas+1]),
+          Jugador#usuario.psocket ! {reenviar, Msg++n()},
+          Jugador#usuario.psocket ! {actualizar,perdidas,0},
+          QuitarObs = fun(Observador) -> Observador#usuario.psocket ! {actualizar,quitoObs,self()} end,
+          map(QuitarObs,Observadores),
+          enviarList(Observadores, "Fin de la partida: "++NombreJugador++" se fue."++n()),
           case length(Jugadores) of
             1 ->
-              partidas ! {cerro_espera, self()},
-              enviarList(Observadores++Jugadores, "Fin de la partida "++nombre(Jugador)++" se fue."++n()),
-              exit("Termino partida");
+              partidas ! {cerro_espera, self()};
             2 ->
-              partidas ! {cerro_ini, self()},
-              enviarList(Observadores++Jugadores, "Fin de la partida "++nombre(Jugador)++" se fue."++n()),
-              exit("Termino partida")
+              Temp = fun(Usuario) -> Usuario /= Jugador end,
+              [ElOtroJugador] = filter(Temp, Jugadores),
+              Msg2 = format("~p se fue. Ganaste la partida! Llevas ~p ganadas y ~p perdidas.",[NombreJugador,ElOtroJugador#usuario.ganadas+1,ElOtroJugador#usuario.perdidas]),
+              ElOtroJugador#usuario.psocket ! {reenviar,Msg2++n()},
+              ElOtroJugador#usuario.psocket ! {actualizar,ganadas,0},
+              partidas ! {cerro_ini, self()}
           end;
         false -> 
           ok
-      end,
-      case is_member(Jugador,Observadores) of
+      end;
+      
+    {se_va_observador,Observador} ->
+      case is_member(Observador,Observadores) of
         true ->
+          Observador#usuario.psocket ! {actualizar,quitoObs,self()},
           partidas ! {se_fue_obs,length(Jugadores),self()},
-          notificarNoObs(Jugadores,Jugador,Observadores);
+          notificarNoObs(Jugadores,Observador,Observadores);
 
         false ->
           tateti(Tablero,Jugadores,Observadores,TurnoDe)
       end
+
     end,
     ok.
-
-
-
-
-
