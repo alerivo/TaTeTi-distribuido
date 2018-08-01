@@ -70,15 +70,18 @@ tateti(Tablero,Jugadores,Observadores,TurnoDe)->
           tateti(Tablero,Jugadores,Observadores,TurnoDe);
 
         false -> 
-          case is_member(Observador,Observadores) of
+          NombreObs = Observador#usuario.nombre,
+          PidObs = Observador#usuario.psocket,
+          case is_key(Observador,Observadores) of
             true ->
               enviar(Observador, "Ya observas esta partida."++n()),
               tateti(Tablero,Jugadores,Observadores,TurnoDe);
             false ->
-              Observador#usuario.psocket ! {actualizar,agregoObs,self()},
+              PidObs ! {actualizar,agregoObs,self()},
               partidas ! {llego_obs,length(Jugadores),self()},
+              Observadores2 = store(NombreObs,PidObs,Observadores),
               notificarObs(Jugadores,Observador,Observadores),
-              tateti(Tablero,Jugadores,Observadores++[Observador],TurnoDe)
+              tateti(Tablero,Jugadores,Observadores2,TurnoDe)
           end
       end;
 
@@ -92,8 +95,9 @@ tateti(Tablero,Jugadores,Observadores,TurnoDe)->
           PidObs = fetch(Observador,Observadores),
           PidObs ! {actualizar,quitoObs,self()},
           partidas ! {se_fue_obs,length(Jugadores),self()},
+          Observadores2 = erase(NombreObs,Observadores),
           notificarNoObs(Jugadores,Observador,Observadores),
-          tateti(Tablero,Jugadores,erase(NombreObs,Observadores),TurnoDe)
+          tateti(Tablero,Jugadores,Observadores2,TurnoDe)
       end;
     {se_va_jugador,Jugador} ->
       case is_member(Jugador,Jugadores) of
@@ -102,9 +106,9 @@ tateti(Tablero,Jugadores,Observadores,TurnoDe)->
           Msg = format("Te fuiste de la partida. Llevas ~p ganadas y ~p perdidas.",[Jugador#usuario.ganadas,Jugador#usuario.perdidas+1]),
           Jugador#usuario.psocket ! {reenviar, Msg++n()},
           Jugador#usuario.psocket ! {actualizar,perdidas,0},
-          QuitarObs = fun(Observador) -> Observador#usuario.psocket ! {actualizar,quitoObs,self()} end,
+          QuitarObs = fun(_,Pid) -> Pid ! {actualizar,quitoObs,self()} end,
           map(QuitarObs,Observadores),
-          enviarList(Observadores, "Fin de la partida: "++NombreJugador++" se fue."++n()),
+          enviarDict(Observadores, "Fin de la partida: "++NombreJugador++" se fue."++n()),
           case length(Jugadores) of
             1 ->
               partidas ! {cerro_espera, self()};
@@ -123,10 +127,11 @@ tateti(Tablero,Jugadores,Observadores,TurnoDe)->
     {se_va_observador,Observador} ->
       case is_key(Observador,Observadores) of
         true ->
-          Observador#usuario.psocket ! {actualizar,quitoObs,self()},
+          fetch(Observador,Observadores) ! {actualizar,quitoObs,self()},
           partidas ! {se_fue_obs,length(Jugadores),self()},
+          Observadores2 = erase(Observador,Observadores),
           notificarNoObs(Jugadores,Observador,Observadores),
-          tateti(Tablero,Jugadores,erase(Observador,Observadores),TurnoDe);
+          tateti(Tablero,Jugadores,Observadores2,TurnoDe);
 
         false ->
           tateti(Tablero,Jugadores,Observadores,TurnoDe)

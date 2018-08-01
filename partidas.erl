@@ -19,14 +19,14 @@ n() ->
 "
 ".
 
-%Modificado
+
 aumentarObs(Pid,Dict)->
   Id = pidAId(Pid),
   AumentarObs = fun({X,Y,Z}) -> {X,Y,Z+1} end,
   update(Id,AumentarObs,Dict).
 
 
-%Modificado
+
 decrementarObs(Pid,Dict)->
   Id = pidAId(Pid),
   AumentarObs = fun({X,Y,Z}) -> {X,Y,Z-1} end,
@@ -34,10 +34,11 @@ decrementarObs(Pid,Dict)->
 
 
 
-pidAId(Pid) -> pid_to_list(Pid).
+pidAId(Pid) -> Id = pid_to_list(Pid),
+               string:slice(Id,1,length(Id)-2).
 
 
-%Modificado
+
 infoPartidas(PIniciadas,PEnEspera)->
   M1 = "Partidas esperando un jugador:"++n(),
   M2 = "ID de partida      Cantidad de observadores"++n(),
@@ -49,7 +50,7 @@ infoPartidas(PIniciadas,PEnEspera)->
   TextoIniciadas = fold(Concatenar,[],map(Lector,PIniciadas)),
   M1++M2++TextoEnEspera++M3++M4++TextoIniciadas.
 
-%Modificado
+
 buscoId(Id,Dict)->
   case is_key(Id,Dict) of
     false -> noEsta;
@@ -110,7 +111,7 @@ partidas(PIniciadas,PEnEspera)->
  
      % {solicito_jugar,Usuario,Id,Fil,Col} ->
 
-     %Modificado
+     
       {empieza_partida,Pid,PidUsuario} ->%tateti me avisa que va a comenzar una partida
         Id = pidAId(Pid),
         Partida = buscoId(Id,PEnEspera),%Busca la partida entre las partidas en espera
@@ -119,7 +120,7 @@ partidas(PIniciadas,PEnEspera)->
         PidUsuario ! {reenviar,"Te uniste a la partida "++Id++n()},
         partidas(PIniciadas2,PEnEspera2);
 
-      %Modificado
+      
       {solicito_observar,Usuario, Id,Pid} ->
         case buscoId(Id, PEnEspera) of
           noEsta ->
@@ -138,7 +139,7 @@ partidas(PIniciadas,PEnEspera)->
 
         end;
         
-      %Modificado
+      
       {solicito_no_observar,Usuario, Id,Pid} ->
         case buscoId(Id, PEnEspera) of
           noEsta ->
@@ -156,7 +157,6 @@ partidas(PIniciadas,PEnEspera)->
             partidas(PIniciadas,PEnEspera)
         end;
 
-      %Modificado
       {salir,Usuario} ->
         Enviar = fun({Pid}) -> Pid ! {se_va, Usuario} end,
         map(Enviar,Usuario#usuario.obs),%Avisarle  a todas las partidas que el jugador este observando que se va
