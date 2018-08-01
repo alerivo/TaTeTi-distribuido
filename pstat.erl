@@ -3,7 +3,7 @@
 
 % El nodo raiz, el que recibira las nuevas conexiones, se llamara principal.
 % Cada nodo que no es principal solo estara conectado (mediante ping) al principal.
-% Mediremos la carga de un nodo calculando la suma de los elementos de la lista devulta
+% Mediremos la carga de un nodo calculando la suma de los elementos de la lista devuelta
 % por erlang:statistics(active_tasks).
 
 pstat() ->

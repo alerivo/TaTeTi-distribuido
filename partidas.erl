@@ -1,7 +1,8 @@
 -module(partidas).
--import(lists,[flatten/1,map/2,member/2,nth/2]).
+-import(lists,[flatten/1,append/2,nth/2]).
+-import(dict,[new/0,map/2,fold/3,store/3,is_key/2,fetch/2,update/3,erase/2]).
 -import(io_lib,[format/2]).
--export([partidas/3]).
+-export([partidas/2]).
 -include("usuario.hrl").
 
 
@@ -9,129 +10,159 @@
 %el segundo elemento será un entero que representa el identificador unico de la partida,
 %el tercer elemento será un entero que representa la cantidad de observadores.
 
+%PIniciadas sera un diccionario de partidas ya iniciadas donde las claves son el Id de juego y el valor
+%sera una partida.
+
+%Sugerencia importante: Id tiene ser resultado de aplicarle alguna funcion al Pid
+
 n() ->
 "
 ".
 
-sacar(Pid,Lista)->
-  [{Pid2,Id,Obs} || {Pid2,Id,Obs} <- Lista, Pid2 /= Pid ].
-
-aumentarObs(Pid,Lista)->
-  [{Pid3,Id3,Obs3}] =[{Pid2,Id,Obs} || {Pid2,Id,Obs} <- Lista, Pid2 == Pid ],
-  (Lista--[{Pid3,Id3,Obs3}])++[{Pid3,Id3,Obs3+1}].
-
-decrementarObs(Pid,Lista)->
-  [{Pid3,Id3,Obs3}] =[{Pid2,Id,Obs} || {Pid2,Id,Obs} <- Lista, Pid2 == Pid ],
-  (Lista--[{Pid3,Id3,Obs3}])++[{Pid3,Id3,Obs3-1}].
+%Modificado
+aumentarObs(Pid,Dict)->
+  Id = pidAId(Pid),
+  AumentarObs = fun({X,Y,Z}) -> {X,Y,Z+1} end,
+  update(Id,AumentarObs,Dict).
 
 
+%Modificado
+decrementarObs(Pid,Dict)->
+  Id = pidAId(Pid),
+  AumentarObs = fun({X,Y,Z}) -> {X,Y,Z-1} end,
+  update(Id,AumentarObs,Dict).
 
+
+
+pidAId(Pid) -> pid_to_list(Pid).
+
+
+%Modificado
 infoPartidas(PIniciadas,PEnEspera)->
   M1 = "Partidas esperando un jugador:"++n(),
   M2 = "ID de partida      Cantidad de observadores"++n(),
-  Lector = fun({_,Id,Obs}) -> format("  ~p                ~p~n",[Id,Obs]) end,
-  TextoEnEspera = flatten(map(Lector,PEnEspera)),
+  Lector = Lector = fun(_,{_,Id,Obs}) -> flatten(format("  ~p                ~p~n",[Id,Obs])) end,
+  Concatenar = fun(_,X,Y) -> lists:append(X,Y) end,
+  TextoEnEspera = fold(Concatenar,[],map(Lector,PEnEspera)),
   M3 = n()++n()++"Partidas iniciadas:"++n(),
   M4 = "ID de partida      Cantidad de observadores"++n(),
-  TextoIniciadas = flatten(map(Lector,PIniciadas)),
+  TextoIniciadas = fold(Concatenar,[],map(Lector,PIniciadas)),
   M1++M2++TextoEnEspera++M3++M4++TextoIniciadas.
 
-buscoId(Id,Lista)->
-  Busqueda = [{Pid,Id2,Obs} || {Pid,Id2,Obs} <- Lista, Id2 == Id ],
-  case length(Busqueda) of
-    0 -> noEsta;
-    _ -> nth(1, Busqueda)
+%Modificado
+buscoId(Id,Dict)->
+  case is_key(Id,Dict) of
+    false -> noEsta;
+    true -> fetch(Id,Dict)
   end.
 
 
-buscoPid(Pid,Lista)->
-  [{Pid2,Id,Obs} || {Pid2,Id,Obs} <- Lista, Pid2 == Pid ].
 
 
-partidas(PIniciadas,PEnEspera,CantPartidas)->
+
+partidas(PIniciadas,PEnEspera)->
   receive
       {cerro_espera, Pid} ->
-        partidas(PIniciadas, sacar(Pid, PEnEspera), CantPartidas);
+        Id = pidAId(Pid),
+        partidas(PIniciadas, erase(Id, PEnEspera));
 
       {cerro_ini, Pid} ->
-        partidas(sacar(Pid, PIniciadas), PEnEspera, CantPartidas);
+        Id = pidAId(Pid),
+        partidas(erase(Id, PIniciadas), PEnEspera);
 
       {llego_obs,CantJugadores,Pid} ->
         case CantJugadores of
           1 ->
-            partidas(PIniciadas,aumentarObs(Pid,PEnEspera),CantPartidas);%Aumentar numero de observadores en partidas en espera
+            partidas(PIniciadas,aumentarObs(Pid,PEnEspera));%Aumentar numero de observadores en partidas en espera
           2 ->
-            partidas(aumentarObs(Pid,PIniciadas),PEnEspera,CantPartidas)%Aumentar numero de observadores en partidas iniciadas
+            partidas(aumentarObs(Pid,PIniciadas),PEnEspera)%Aumentar numero de observadores en partidas iniciadas
         end;
 
       {se_fue_obs,CantJugadores,Pid} ->
         case CantJugadores of
           1 ->
-            partidas(PIniciadas,decrementarObs(Pid,PEnEspera),CantPartidas);%Decrementar observadores en partidas en espera
+            partidas(PIniciadas,decrementarObs(Pid,PEnEspera));%Decrementar observadores en partidas en espera
           2 ->
-            partidas(decrementarObs(Pid,PIniciadas),PEnEspera,CantPartidas)%Decrementar observadores en partidas iniciadas
+            partidas(decrementarObs(Pid,PIniciadas),PEnEspera)%Decrementar observadores en partidas iniciadas
         end;
 
       {solicito_info,Pid} ->
         Pid ! {info,infoPartidas(PIniciadas,PEnEspera)},%Enviar un msg con todas las partidas
-        partidas(PIniciadas,PEnEspera,CantPartidas);
+        partidas(PIniciadas,PEnEspera);
 
       {solicito_crear,Usuario,Pid} ->
         PidPartida = spawn(tateti, tateti,[Usuario]),%Crear una partida
-        Msg = format("Se creo satisfactoriamente la partida con Id: ~p",[CantPartidas]),
-        Pid ! {ok, Msg},
-        NuevaPartida = {PidPartida, CantPartidas, 0},
-        partidas(PIniciadas,PEnEspera++[NuevaPartida],CantPartidas+1);
+        Id = pidAId(PidPartida),
+        Msg = format("Se creo satisfactoriamente la partida con Id: ~p",[Id]),
+        Pid ! {ok, Msg,PidPartida},
+        NuevaPartida = {PidPartida, Id, 0},
+        partidas(PIniciadas,store(Id,NuevaPartida,PEnEspera));%Se agrega una partida en espera
 
       {solicito_acceder,Usuario, Id,Pid} ->
         case buscoId(Id, PEnEspera) of
           noEsta ->
             Pid ! {rta, "No existe partida en espera con ese identificador"++n()},
-            partidas(PIniciadas,PEnEspera,CantPartidas);
-          {PidPartida, Id, Obs} ->
-            Part = {PidPartida, Id, Obs},
-            PidPartida ! {se_une, Usuario},%Intenta unirse a una partida
-            Pid ! {rta, "Te uniste"++n()},
-            partidas(PIniciadas++[Part],PEnEspera--[Part],CantPartidas)%Esto esta mal
+            partidas(PIniciadas,PEnEspera);
+          {PidPartida, Id, _} ->
+            PidPartida ! {quiero_unirme, Usuario},%Solicita unirse a una partida
+            partidas(PIniciadas,PEnEspera)
         end;
  
      % {solicito_jugar,Usuario,Id,Fil,Col} ->
 
+     %Modificado
+      {empieza_partida,Pid,PidUsuario} ->%tateti me avisa que va a comenzar una partida
+        Id = pidAId(Pid),
+        Partida = buscoId(Id,PEnEspera),%Busca la partida entre las partidas en espera
+        PEnEspera2 = erase(Id,PEnEspera),%Saca la partida de espera
+        PIniciadas2 = store(Id,Partida,PIniciadas),%Comienza la partida
+        PidUsuario ! {reenviar,"Te uniste a la partida "++Id++n()},
+        partidas(PIniciadas2,PEnEspera2);
 
-      {empezo,Pid} ->
-        Partida = buscoPid(Pid,PEnEspera),
-        partidas(PIniciadas++Partida,PEnEspera--Partida,CantPartidas);
-
-
-
+      %Modificado
       {solicito_observar,Usuario, Id,Pid} ->
-        case buscoId(Id, PEnEspera++PIniciadas) of
+        case buscoId(Id, PEnEspera) of
           noEsta ->
-            Pid ! {rta, "No existe partida con ese identificador"++n()},
-            partidas(PIniciadas,PEnEspera,CantPartidas);
+            case buscoId(Id, PIniciadas) of
+              noEsta ->
+                Pid ! {rta, "No existe partida con ese identificador"++n()},
+                partidas(PIniciadas,PEnEspera);
+              {PidPartida, _, _} ->
+                PidPartida ! {observa, Usuario},
+                partidas(PIniciadas,PEnEspera)
+            end;
+        
+          {PidPartida, _, _} ->
+            PidPartida ! {observa, Usuario},%Solicita observar una partida
+            partidas(PIniciadas,PEnEspera)
 
-          {PidPartida, Id, _} ->
-            PidPartida ! {observa, Usuario},%Solicita observar una partida, falta aumentar el numero de observadores
-            partidas(PIniciadas,PEnEspera,CantPartidas)
         end;
         
+      %Modificado
       {solicito_no_observar,Usuario, Id,Pid} ->
-        case buscoId(Id, PEnEspera++PIniciadas) of
+        case buscoId(Id, PEnEspera) of
           noEsta ->
-            Pid ! {rta, "No existe partida con ese identificador"++n()},
-            partidas(PIniciadas,PEnEspera,CantPartidas);
-
-          {PidPartida, Id, _} ->
-            PidPartida ! {no_observa, Usuario},%Dejar de observar una partida
-            partidas(PIniciadas,PEnEspera,CantPartidas)%Falta decrementar el numero de observadores
+            case buscoId(Id, PIniciadas) of
+              noEsta ->
+                Pid ! {rta, "No existe partida con ese identificador"++n()},
+                partidas(PIniciadas,PEnEspera);
+              {PidPartida, _, _} ->
+                PidPartida ! {no_observa, Usuario},
+                partidas(PIniciadas,PEnEspera)
+            end;
+        
+          {PidPartida, _, _} ->
+            PidPartida ! {no_observa, Usuario},%Solicita dejar de observar una partida
+            partidas(PIniciadas,PEnEspera)
         end;
 
+      %Modificado
       {salir,Usuario} ->
-        Enviar = fun({Pid,_,_}) -> Pid ! {se_va, Usuario} end,
-        map(Enviar,Usuario#usuario.obs),%Avisarle  a todas las partidas que el jugador esta observando que se va
+        Enviar = fun({Pid}) -> Pid ! {se_va, Usuario} end,
+        map(Enviar,Usuario#usuario.obs),%Avisarle  a todas las partidas que el jugador este observando que se va
+        Jugando = Usuario#usuario.jugando,
         if 
-          Usuario#usuario.jugando /= undefined -> Pid ! {se_va, Usuario};
+          Jugando /= undefined -> Jugando ! {se_va, Usuario};%Si el usuario esta jugando avisa que se va del juego
           true -> ok
         end
-  end,
-  ok.
+  end.

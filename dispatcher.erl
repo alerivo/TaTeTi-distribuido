@@ -1,8 +1,7 @@
 -module(dispatcher).
+-include("usuario.hrl").
 -import (string, [prefix/2]).
 -export([lanzar_dispatcher/0]).
--include("usuario.hrl").
-
 
 n() ->
 "
