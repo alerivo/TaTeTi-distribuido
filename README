@@ -1,0 +1,29 @@
+Servidor de TATETI distribuido implementado con Erlang.
+
+Antes de lanzarlo hay que actualizar el archivo servidor.erl en la linea 9 especificando el nombre del nodo del servidor principal.
+
+Una vez compilados todos los nodos hay que lanzar el nodo principal de la siguiente manera:
+
+erl -sname principal -setcookie COOKIE -connect_all false
+
+y dentro de esa terminal ejecutar servidor:init(true).
+
+Luego lanzar todos los nodos que deseen (al menos uno) de la siguiente manera:
+
+erl -sname nombreNodo -setcookie COOKIE -connect_all false
+
+Notar que la COOKIE debe ser la misma en todos los nodos, sino no se podran conectar y los nombre de los nodos deben ser diferentes.
+
+En cada nodo lanzado ejecutar servidor:init(false).
+
+Ahora para jugar se puede utilizar telnet de la siguiente manera
+telnet localhost 8000 en caso de estar corriendo el nodo principal en la propia maquina
+
+Una vez se asigno el nombre los posibles comandos son:
+LSG - Lista las partidas disponibles.
+NEW - Crea una partida nueva.
+ACC PartidaID - Entra a la partida PartidaID (no debe estar iniciada).
+PLA FILA COLUMNA - Realiza una jugada.
+OBS PartidaID - Pide observar una partida.
+LEA PartidaID - Deja de observar una partida.
+BYE - Termina la conexión, abandona las partidas que esta jugando.
