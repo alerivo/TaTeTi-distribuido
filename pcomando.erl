@@ -1,7 +1,7 @@
 -module(pcomando).
 -include("usuario.hrl").
 -import(string,[slice/3,slice/2,to_integer/1,split/3]).
--import(lists,[map/2,filter/2]).
+-import(lists,[map/2,filter/2,sublist/2]).
 -export([pcomando/2]).
 
 n() ->
@@ -9,10 +9,10 @@ n() ->
 ".
 
 verific(Msg) ->
-  EsEspacio = slice(Msg,3,4) == " ",
+  EsEspacio = slice(Msg,3,1) == " ",
   case EsEspacio of
     true ->
-      {Id,_} = to_integer(slice(Msg,4));
+      Id = slice(Msg,4);
     false ->
       Id = error
   end,
@@ -22,8 +22,10 @@ respError(Psocket)->
   Psocket ! {reenviar, "Comando incorrecto"++n()},
   ok.
 
-pcomando(Usuario,Msg)->
+pcomando(Usuario,Msg1)->
   Psocket = Usuario#usuario.psocket,
+  Partida = Usuario#usuario.jugando,
+  Msg = sublist(Msg1,length(Msg1)-2),
   case slice(Msg,0,3) of
     "LSG" ->
        partidas ! {solicito_info,self()},
@@ -32,7 +34,7 @@ pcomando(Usuario,Msg)->
        end;
 
     "NEW" ->
-      case Usuario#usuario.jugando of
+      case Partida of
         undefined -> % Usuario no esta jugando ninguna partida
           partidas ! {solicito_crear,Usuario,self()},
           receive
@@ -47,16 +49,23 @@ pcomando(Usuario,Msg)->
     "ACC" ->
        case verific(Msg) of
          error -> respError(Psocket);
-         Id ->
-           partidas ! {solicito_acceder,Usuario,Id,self()},
-           receive
-             {rta, Rta} -> Psocket ! {reenviar,Rta}
-           end
+         Id ->  case Partida of
+                  undefined ->  partidas ! {solicito_acceder,Usuario,Id,self()},
+                                receive
+                                   {error, Rta} -> Psocket ! {reenviar,Rta};
+                                   {ok,PidPartida} -> Psocket ! {actualizar,jugando,PidPartida},
+                                                      Psocket ! {reenviar,"Te uniste a la partida" ++ n()}
+                                end
+                end
        end;
 
-    "PLA" -> 
+    "PLA" ->
 %Inicia verificacion de que el comando sea correcto
-      case slice(Msg,3,4) == " " of
+      case Partida of 
+        undefined -> Psocket ! {reenviar,"Deberías estar jugando una partida" ++ n()};
+        _ -> ok
+      end,
+      case slice(Msg,3,1) == " " of
         true  -> ok;
         false ->
           respError(Psocket),
@@ -64,7 +73,7 @@ pcomando(Usuario,Msg)->
       end,
       Temp = split(slice(Msg,4)," ",all),
       case length(Temp) of
-        3 -> ok;
+        2 -> ok;
         _ ->
           respError(Psocket),
           exit("Comando incorrecto")
@@ -79,51 +88,44 @@ pcomando(Usuario,Msg)->
       end,
       Temp4 = filter(fun({_,Y})-> Y == [] end, Temp2),
       case length(Temp4)of
-       3 -> ok;
+       2 -> ok;
        _ ->
          respError(Psocket),
          exit("Comando incorrecto")
     end,       
 %Fin de verificación
-      [Id,Fil,Col] = map(fun({X,_}) -> X end,Temp2),
-      partidas ! {solicito_jugar,Usuario,Id,Fil,Col},
-      receive
-        {ok,Msg3} -> Psocket ! {reenviar,Msg3}
-      end;
+      [Fil,Col] = map(fun({X,_}) -> X end,Temp2),
+      Partida ! {solicito_jugar,Usuario,Fil,Col};
 
     "OBS" ->
       case verific(Msg) of
         error -> respError(Psocket);
         Id ->
-          partidas ! {solicito_observar,Usuario,Id,self()},
-          receive
-            {rta, Rta} -> Psocket ! {reenviar,Rta}
-          end
+          partidas ! {solicito_observar,Usuario,Id}
       end;
 
     "LEA" ->
       case verific(Msg) of
         error -> respError(Psocket);
         Id ->
-          partidas ! {solicito_no_observar,Usuario, Id,self()},
-            receive
-              {rta, Rta} -> Psocket ! {reenviar,Rta}
-            end
+          partidas ! {solicito_no_observar,Usuario, Id,self()}
       end;
 
     "BYE" ->
       case length(Msg) of
         3 ->
-          case Usuario#usuario.jugando of
+          case Partida of
             undefined -> ok;
             PidPartidaJugando ->
-              PidPartidaJugando ! {se_va_jugador,Usuario}
+              PidPartidaJugando ! {se_va_jugador,Usuario} %% Se va de la partida
           end,
           MeVoy = fun(PidPartidaObservada) -> PidPartidaObservada ! {se_va_observador,Usuario} end,
-          map(MeVoy, Usuario#usuario.obs),
-          usuarios ! {eliminar,Usuario#usuario.nombre},
-          Usuario#usuario.psocket ! {salir};
+          map(MeVoy, Usuario#usuario.obs),%% Avisa que se va a todas las partidas que observaba
+          usuarios ! {eliminar,Usuario#usuario.nombre}, %% Lo elimina de los usuarios
+          Usuario#usuario.psocket ! {salir}; %% Cierra el socket
         _ -> respError(Psocket)
-      end
+      end;
+
+    _  ->  respError(Psocket)
   end,
   ok.

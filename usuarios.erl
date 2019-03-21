@@ -5,7 +5,6 @@
 % Llevaremos registro global de los usuarios conectados al servidor de juegos
 % en un ordset.
 
-
 usuarios(CTO) ->
   receive 
     {Pid,consulta,Nombre} ->
@@ -18,7 +17,12 @@ usuarios(CTO) ->
           Pid ! {ok},
           usuarios(CTO2)
       end;
+      
     {eliminar,Nombre} ->
-      usuarios(del_element(Nombre, CTO))
+      usuarios(del_element(Nombre, CTO));      
+    
+    {cuantos_usuarios} ->
+      pstat ! {cant_usuarios,ordsets:size(CTO)},
+      usuarios(CTO)
   end,
   ok.
